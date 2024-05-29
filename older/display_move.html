@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sequential OBJ Renderer with Lighting</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+        }
+
+        canvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+        }
+    </style>
+</head>
+<body>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gl-matrix/2.8.1/gl-matrix-min.js"></script>
+
+    <canvas id="glCanvas"></canvas>
+    <script>
+        window.onload = function() {
+            const canvas = document.getElementById('glCanvas');
+            const gl = canvas.getContext('webgl');
+            if (!gl) {
+                console.error('WebGL not supported, falling back on experimental-webgl');
+                gl = canvas.getContext('experimental-webgl');
+            }
+            if (!gl) {
+                alert('Your browser does not support WebGL');
+                return;
+            }
+
+            let isDragging = false;
+            let lastX = 0;
+            let lastY = 0;
+            let cameraRotationY = 0;
+            let cameraRotationX = 0;
+
+            canvas.addEventListener('mousedown', e => {
+                isDragging = true;
+                lastX = e.clientX;
+                lastY = e.clientY;
+            });
+
+            canvas.addEventListener('mouseup', () => {
+                isDragging = false;
+            });
+
+            canvas.addEventListener('mousemove', e => {
+                if (isDragging) {
+                    const deltaX = e.clientX - lastX;
+                    const deltaY = e.clientY - lastY;
+
+                    cameraRotationY += deltaX * 0.01;
+                    cameraRotationX += deltaY * 0.01;
+
+                    lastX = e.clientX;
+                    lastY = e.clientY;
+
+                    drawScene();
+                }
+            });
+
+            const vsSource = `
+                attribute vec4 aVertexPosition;
+                uniform mat4 uModelViewMatrix;
+                uniform mat4 uProjectionMatrix;
+
+                void main() {
+                    gl_Position = uProjectionMatrix * uModelViewMatrix * aVertexPosition;
+                }
+            `;
+
+            const fsSource = `
+                void main() {
+                    gl_FragColor = vec4(1.0, 0.0, 1.0, 1.0);
+                }
+            `;
+
+            // Initialize shader program, buffers, and other WebGL components
+            let programInfo = null;
+            let buffers = null;
+            let objFiles = [
+                'assets/models/A_10.obj',
+                'assets/models/cow.obj',
+                'assets/models/teapot.obj'
+            ];
+            let currentObjIndex = 0;
+
+            function initShaderProgram(gl, vsSource, fsSource) {
+                const vertexShader = loadShader(gl, gl.VERTEX_SHADER, vsSource);
+                const fragmentShader = loadShader(gl, gl.FRAGMENT_SHADER, fsSource);
+
+                const shaderProgram = gl.createProgram();
+                gl.attachShader(shaderProgram, vertexShader);
+                gl.attachShader(shaderProgram, fragmentShader);
+                gl.linkProgram(shaderProgram);
+
+                if (!gl.getProgramParameter(shaderProgram, gl.LINK_STATUS)) {
+                    console.error('Unable to initialize the shader program: ' + gl.getProgramInfoLog(shaderProgram));
+                    return null;
+                }
+
+                return shaderProgram;
+            }
+
+            function loadShader(gl, type, source) {
+                const shader = gl.createShader(type);
+                gl.shaderSource(shader, source);
+                gl.compileShader(shader);
+
+                if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+                    console.error('An error occurred compiling the shaders: ' + gl.getShaderInfoLog(shader));
+                    gl.deleteShader(shader);
+                    return null;
+                }
+
+                return shader;
+            }
+
+            function parseOBJ(objText) {
+                const positions = [];
+                const indices = [];
+
+                const lines = objText.split('\n');
+                lines.forEach(line => {
+                    const parts = line.trim().split(/\s+/);
+                    if (parts[0] === 'v') {
+                        positions.push(parseFloat(parts[1]), parseFloat(parts[2]), parseFloat(parts[3]));
+                    } else if (parts[0] === 'f') {
+                        for (let i = 1; i < parts.length; i++) {
+                            const index = parseInt(parts[i]) - 1; // OBJ indices are 1-based
+                            indices.push(index);
+                        }
+                    }
+                });
+
+                return { positions, indices };
+            }
+
+            function loadOBJ(url, callback) {
+                fetch(url)
+                    .then(response => response.text())
+                    .then(objText => {
+                        const { positions, indices } = parseOBJ(objText);
+                        callback(positions, indices);
+                    });
+            }
+
+            function initBuffers(gl, positions, indices) {
+                const positionBuffer = gl.createBuffer();
+                gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+                gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.STATIC_DRAW);
+
+                const indexBuffer = gl.createBuffer();
+                gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
+                gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(indices), gl.STATIC_DRAW);
+
+                return {
+                    position: positionBuffer,
+                    indices: indexBuffer,
+                    numVertices: indices.length
+                };
+            }
+
+            function init() {
+                const shaderProgram = initShaderProgram(gl, vsSource, fsSource);
+                if (!shaderProgram) {
+                    console.error('Failed to initialize shader program');
+                    return;
+                }
+
+                programInfo = {
+                    program: shaderProgram,
+                    attribLocations: {
+                        vertexPosition: gl.getAttribLocation(shaderProgram, 'aVertexPosition'),
+                        vertexNormal: gl.getAttribLocation(shaderProgram, 'aVertexNormal'),
+                    },
+                    uniformLocations: {
+                        projectionMatrix: gl.getUniformLocation(shaderProgram, 'uProjectionMatrix'),
+                        modelViewMatrix: gl.getUniformLocation(shaderProgram, 'uModelViewMatrix'),
+                        lightColor: gl.getUniformLocation(shaderProgram, 'uLightColor'),
+                        lightDirection: gl.getUniformLocation(shaderProgram, 'uLightDirection'),
+                        ambientColor: gl.getUniformLocation(shaderProgram, 'uAmbientColor'),
+                        diffuseColor: gl.getUniformLocation(shaderProgram, 'uDiffuseColor'),
+                    },
+                };
+
+                loadNextOBJ();
+            }
+
+
+            function loadNextOBJ() {
+                if (currentObjIndex >= objFiles.length) {
+                    currentObjIndex = 0; // Loop back to the first OBJ file
+                }
+
+                loadOBJ(objFiles[currentObjIndex], function(positions, normals, indices) {
+                    buffers = initBuffers(gl, positions, normals, indices);
+                    drawScene();
+
+                    // Load the next OBJ file after a delay (e.g., 2 seconds)
+                    setTimeout(loadNextOBJ, 2000);
+
+                    currentObjIndex++;
+                });
+            }
+
+            function drawScene() {
+                gl.clearColor(0.0, 0.0, 0.0, 1.0);
+                gl.clearDepth(1.0);
+                gl.enable(gl.DEPTH_TEST);
+                gl.depthFunc(gl.LEQUAL);
+                gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+                const fov = 45 * Math.PI / 180;
+                const aspect = gl.canvas.clientWidth / gl.canvas.clientHeight;
+                const zNear = 0.1;
+                const zFar = 100.0;
+                const projectionMatrix = mat4.create();
+                mat4.perspective(projectionMatrix, fov, aspect, zNear, zFar);
+
+                const modelViewMatrix = mat4.create();
+                mat4.translate(modelViewMatrix, modelViewMatrix, [0.0, 0.0, -10.0]);
+                mat4.rotateY(modelViewMatrix, modelViewMatrix, cameraRotationY);
+                mat4.rotateX(modelViewMatrix, modelViewMatrix, cameraRotationX);
+
+                // console.log(programInfo.attribLocations.vertexPosition);
+                gl.bindBuffer(gl.ARRAY_BUFFER, buffers.position);
+                gl.vertexAttribPointer(
+                    programInfo.attribLocations.vertexPosition,
+                    3,
+                    gl.FLOAT,
+                    false,
+                    0,
+                    0
+                );
+
+                gl.enableVertexAttribArray(programInfo.attribLocations.vertexPosition);
+                
+                // normal is -1 for some reason
+                console.log(programInfo.attribLocations.vertexNormal);
+
+                gl.bindBuffer(gl.ARRAY_BUFFER, buffers.normal);
+                gl.vertexAttribPointer(
+                    programInfo.attribLocations.vertexNormal,
+                    3,
+                    gl.FLOAT,
+                    false,
+                    0,
+                    0
+                );
+                gl.enableVertexAttribArray(programInfo.attribLocations.vertexNormal);
+
+                gl.useProgram(programInfo.program);
+
+                gl.uniformMatrix4fv(
+                    programInfo.uniformLocations.projectionMatrix,
+                    false,
+                    projectionMatrix
+                );
+                gl.uniformMatrix4fv(
+                    programInfo.uniformLocations.modelViewMatrix,
+                    false,
+                    modelViewMatrix
+                );
+
+                // Light properties...
+                const lightColor = [1.0, 1.0, 1.0];
+                const lightDirection = [-1.0, -1.0, -1.0];
+                const ambientColor = [0.2, 0.2, 0.2];
+                const diffuseColor = [0.8, 0.8, 0.8];
+
+                gl.uniform3fv(programInfo.uniformLocations.lightColor, lightColor);
+                gl.uniform3fv(programInfo.uniformLocations.lightDirection, lightDirection);
+                gl.uniform3fv(programInfo.uniformLocations.ambientColor, ambientColor);
+                gl.uniform3fv(programInfo.uniformLocations.diffuseColor, diffuseColor);
+
+                gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buffers.indices);
+                gl.drawElements(gl.TRIANGLES, buffers.numVertices, gl.UNSIGNED_SHORT, 0);
+            }
+
+            init(); // Start rendering loop
+        };
+    </script>
+</body>
+</html>
