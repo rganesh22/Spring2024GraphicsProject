@@ -16,60 +16,33 @@ window.onload = function() {
         uniform mat4 uModelViewMatrix;
         uniform mat4 uProjectionMatrix;
         varying highp vec3 vNormal;
-        varying highp vec3 vPosition; 
 
         void main() {
             gl_Position = uProjectionMatrix * uModelViewMatrix * aVertexPosition;
             vNormal = aVertexNormal;
-            vPosition = aVertexPosition.xyz; 
         }
     `;
 
     const fsSource = `
         precision mediump float;
         varying highp vec3 vNormal;
-        varying highp vec3 vPosition;
-        uniform vec3 lightPosition;
-        uniform vec3 lightColor;
-        uniform vec3 viewPosition;
-        uniform float shininess;
-        uniform sampler2D shadowMap;
-        uniform bool isGround; 
-
         void main() {
+            vec3 lightDirection = normalize(vec3(-0.5, -1.0, -1.0));
+            vec3 ambientColor = vec3(0.1, 0.1, 0.3); // Cooler ambient color
+            vec3 diffuseColor = vec3(0.3, 0.5, 1.0); // Cooler diffuse color
+            vec3 lightColor = vec3(1.0, 1.0, 1.0);
+
             vec3 normal = normalize(vNormal);
-            vec3 lightDirection = normalize(lightPosition - vPosition);
-            vec3 viewDirection = normalize(viewPosition - vPosition);
-            vec3 halfwayDir = normalize(lightDirection + viewDirection);
-
             float lambertian = max(dot(normal, lightDirection), 0.0);
-            float specular = pow(max(dot(normal, halfwayDir), 0.0), shininess);
 
-            vec3 ambientColor = vec3(0.2, 0.2, 0.2); 
-            vec3 diffuseColor = vec3(0.0, 0.0, 0.8); 
-            vec3 specularColor = vec3(0.8, 0.8, 0.8); 
-            vec3 lightColor = vec3(0.0, 0.0, 0.8); 
+            vec3 ambient = ambientColor * lightColor;
+            vec3 diffuse = diffuseColor * lightColor * lambertian;
 
-            vec3 ambient = ambientColor * lightColor; 
-            vec3 diffuse = lambertian * diffuseColor * lightColor; 
-            vec3 specularLight = specularColor * specular; 
-
-            vec4 shadowCoord = vec4(vPosition, 1.0);
-            shadowCoord = shadowCoord / shadowCoord.w;
-            float depth = texture2D(shadowMap, shadowCoord.xy).r;
-            float visibility = (shadowCoord.z > depth + 0.002) ? 0.5 : 1.0; 
-
-            vec3 finalColor;
-            if (isGround) {
-                finalColor = vec3(0.7, 0.7, 0.7); 
-            } else {
-                finalColor = ambient + visibility * (diffuse + specularLight);
-            }
-
+            vec3 finalColor = ambient + diffuse;
             gl_FragColor = vec4(finalColor, 1.0);
         }
     `;
-    
+
     function initShaderProgram(gl, vsSource, fsSource) {
         const vertexShader = loadShader(gl, gl.VERTEX_SHADER, vsSource);
         const fragmentShader = loadShader(gl, gl.FRAGMENT_SHADER, fsSource);
@@ -119,7 +92,7 @@ window.onload = function() {
             } else if (parts[0] === 'f') {
                 for (let i = 1; i <= 3; i++) {
                     const indicesData = parts[i].split('/');
-                    const positionIndex = parseInt(indicesData[0]) - 1; 
+                    const positionIndex = parseInt(indicesData[0]) - 1; // OBJ indices are 1-based
                     const normalIndex = parseInt(indicesData[2]) - 1;
                     const key = `${positionIndex}/${normalIndex}`;
 
@@ -238,8 +211,8 @@ window.onload = function() {
     }
 
     function start() {
-        let isDragging = false; 
-
+        let isDragging = false; // Add this line
+        
         const shaderProgram = initShaderProgram(gl, vsSource, fsSource);
         const programInfo = {
             program: shaderProgram,
@@ -273,7 +246,7 @@ window.onload = function() {
             loadOBJ(objFiles[currentObjIndex], function(positions, normals, indices) {
                 buffers = initBuffers(gl, positions, normals, indices);
                 currentObjIndex++;
-                setTimeout(loadNextOBJ, 5000); 
+                setTimeout(loadNextOBJ, 5000); // Cycle every 5 seconds
             });
         }
 
