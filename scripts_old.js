@@ -38,8 +38,8 @@ window.onload = function() {
             vec3 ambient = ambientColor * lightColor;
             vec3 diffuse = diffuseColor * lightColor * lambertian;
 
-            vec3 finalColor = ambient + diffuse;
-            // vec3 finalColor = normal * -1.0;
+            // vec3 finalColor = ambient + diffuse;
+            vec3 finalColor = normal * -1.0;
             gl_FragColor = vec4(finalColor, 1.0);
         }
     `;
@@ -82,95 +82,34 @@ window.onload = function() {
         const vertexMap = new Map();
         const finalPositions = [];
         const finalNormals = [];
-    
+
         const lines = objText.split('\n');
-        let hasNormals = false;
-    
         lines.forEach(line => {
             const parts = line.trim().split(/\s+/);
             if (parts[0] === 'v') {
                 positions.push(parseFloat(parts[1]), parseFloat(parts[2]), parseFloat(parts[3]));
             } else if (parts[0] === 'vn') {
-                hasNormals = true;
                 normals.push(parseFloat(parts[1]), parseFloat(parts[2]), parseFloat(parts[3]));
             } else if (parts[0] === 'f') {
                 for (let i = 1; i <= 3; i++) {
                     const indicesData = parts[i].split('/');
                     const positionIndex = parseInt(indicesData[0]) - 1; // OBJ indices are 1-based
-                    const normalIndex = hasNormals ? parseInt(indicesData[2]) - 1 : null;
-                    const key = hasNormals ? `${positionIndex}/${normalIndex}` : `${positionIndex}`;
-    
+                    const normalIndex = parseInt(indicesData[2]) - 1;
+                    const key = `${positionIndex}/${normalIndex}`;
+
                     if (!vertexMap.has(key)) {
                         vertexMap.set(key, finalPositions.length / 3);
                         finalPositions.push(positions[positionIndex * 3], positions[positionIndex * 3 + 1], positions[positionIndex * 3 + 2]);
-                        if (hasNormals) {
-                            finalNormals.push(normals[normalIndex * 3], normals[normalIndex * 3 + 1], normals[normalIndex * 3 + 2]);
-                        } else {
-                            finalNormals.push(0, 0, 0); // Placeholder for normals
-                        }
+                        finalNormals.push(normals[normalIndex * 3], normals[normalIndex * 3 + 1], normals[normalIndex * 3 + 2]);
                     }
-    
+
                     indices.push(vertexMap.get(key));
                 }
             }
         });
-    
-        if (!hasNormals) {
-            // Calculate normals
-            const faceNormals = Array(finalPositions.length / 3).fill(null).map(() => [0, 0, 0]);
-    
-            for (let i = 0; i < indices.length; i += 3) {
-                const i0 = indices[i] * 3;
-                const i1 = indices[i + 1] * 3;
-                const i2 = indices[i + 2] * 3;
-    
-                const v0 = [finalPositions[i0], finalPositions[i0 + 1], finalPositions[i0 + 2]];
-                const v1 = [finalPositions[i1], finalPositions[i1 + 1], finalPositions[i1 + 2]];
-                const v2 = [finalPositions[i2], finalPositions[i2 + 1], finalPositions[i2 + 2]];
-    
-                const edge1 = [v1[0] - v0[0], v1[1] - v0[1], v1[2] - v0[2]];
-                const edge2 = [v2[0] - v0[0], v2[1] - v0[1], v2[2] - v0[2]];
-    
-                const normal = [
-                    edge1[1] * edge2[2] - edge1[2] * edge2[1],
-                    edge1[2] * edge2[0] - edge1[0] * edge2[2],
-                    edge1[0] * edge2[1] - edge1[1] * edge2[0]
-                ];
-    
-                const length = Math.sqrt(normal[0] * normal[0] + normal[1] * normal[1] + normal[2] * normal[2]);
-                if (length > 0) {
-                    normal[0] /= length;
-                    normal[1] /= length;
-                    normal[2] /= length;
-                }
-    
-                for (let j = 0; j < 3; j++) {
-                    faceNormals[indices[i + j]][0] += normal[0];
-                    faceNormals[indices[i + j]][1] += normal[1];
-                    faceNormals[indices[i + j]][2] += normal[2];
-                }
-            }
-    
-            // Normalize the normals
-            for (let i = 0; i < faceNormals.length; i++) {
-                const nx = faceNormals[i][0];
-                const ny = faceNormals[i][1];
-                const nz = faceNormals[i][2];
-                const length = Math.sqrt(nx * nx + ny * ny + nz * nz);
-                if (length > 0) {
-                    finalNormals[i * 3] = nx / length;
-                    finalNormals[i * 3 + 1] = ny / length;
-                    finalNormals[i * 3 + 2] = nz / length;
-                } else {
-                    finalNormals[i * 3] = 0;
-                    finalNormals[i * 3 + 1] = 0;
-                    finalNormals[i * 3 + 2] = 0;
-                }
-            }
-        }
-    
+
         return { positions: finalPositions, normals: finalNormals, indices };
-    }    
+    }
 
     function loadOBJ(url, callback) {
         fetch(url)
