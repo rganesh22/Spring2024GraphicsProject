@@ -288,11 +288,26 @@ window.onload = function() {
             },
         };
 
-        const objFiles = [
-            'assets/models/A_10.obj',
-            'assets/models/cow.obj',
-            'assets/models/teapot.obj'
-        ];
+        function generateOBJFilePaths() {
+            const objFiles = [];
+            const basePath = 'webgl-assets/meshes/';
+            const numFiles = 60; // Assuming 000.obj to 059.obj
+        
+            for (let i = 0; i < numFiles; i++) {
+                const paddedIndex = ('000' + i).slice(-3); // Ensure padding for single-digit indices
+                objFiles.push(`${basePath}${paddedIndex}.obj`);
+            }
+        
+            return objFiles;
+        }
+
+        // const objFiles = [
+        //     'assets/models/A_10.obj',
+        //     'assets/models/cow.obj',
+        //     'assets/models/teapot.obj'
+        // ];
+
+        const objFiles = generateOBJFilePaths();
 
         const groundPlaneBuffers = initGroundPlaneBuffers(gl);
 
@@ -308,7 +323,7 @@ window.onload = function() {
             loadOBJ(objFiles[currentObjIndex], function(positions, normals, indices) {
                 buffers = initBuffers(gl, positions, normals, indices);
                 currentObjIndex++;
-                setTimeout(loadNextOBJ, 5000); // Cycle every 5 seconds
+                setTimeout(loadNextOBJ, 100); // Cycle every 5 seconds
             });
         }
 
