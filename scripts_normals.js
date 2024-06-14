@@ -1,31 +1,18 @@
 window.onload = function() {
-    // Get the canvas element from the HTML document
     const canvas = document.getElementById('glCanvas');
-
-    // Initialize WebGL context with anti-aliasing enabled
     let gl = canvas.getContext('webgl', { antialias: true, alpha: false });
     if (!gl) {
         console.error('WebGL not supported, falling back on experimental-webgl');
         gl = canvas.getContext('experimental-webgl', { antialias: true, alpha: false });
     }
-
     if (!gl) {
         alert('Your browser does not support WebGL');
         return;
     }
 
-    // Check if MSAA is supported and enable it
-    const msaaSupported = gl.getContextAttributes().antialias;
-    if (msaaSupported) {
-        console.log('Multisample anti-aliasing (MSAA) enabled');
-    } else {
-        console.warn('Multisample anti-aliasing (MSAA) is not supported');
-    }
-
-    // Enable additional extensions if needed
+    // Enable multisample anti-aliasing (MSAA)
     gl.getExtension('OES_standard_derivatives');
 
-    // Vertex shader source code
     const vsSource = `
         attribute vec4 aVertexPosition;
         attribute vec3 aVertexNormal;
@@ -41,7 +28,6 @@ window.onload = function() {
         }
     `;
 
-    // Fragment shader source code
     const fsSource = `
         precision mediump float;
         varying highp vec3 vNormal;
@@ -71,7 +57,24 @@ window.onload = function() {
         }
     `;
 
-    // Initialize shader program
+    const normalLineVsSource = `
+        attribute vec3 aLinePosition;
+        uniform mat4 uModelViewMatrix;
+        uniform mat4 uProjectionMatrix;
+
+        void main() {
+            gl_Position = uProjectionMatrix * uModelViewMatrix * vec4(aLinePosition, 1.0);
+        }
+    `;
+
+    const normalLineFsSource = `
+        precision mediump float;
+
+        void main() {
+            gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0); // Red color for normal lines
+        }
+    `;
+
     function initShaderProgram(gl, vsSource, fsSource) {
         const vertexShader = loadShader(gl, gl.VERTEX_SHADER, vsSource);
         const fragmentShader = loadShader(gl, gl.FRAGMENT_SHADER, fsSource);
@@ -89,7 +92,6 @@ window.onload = function() {
         return shaderProgram;
     }
 
-    // Load and compile a shader
     function loadShader(gl, type, source) {
         const shader = gl.createShader(type);
         gl.shaderSource(shader, source);
@@ -104,7 +106,6 @@ window.onload = function() {
         return shader;
     }
 
-    // Parse the OBJ file
     function parseOBJ(objText) {
         const positions = [];
         const normals = [];
@@ -116,7 +117,6 @@ window.onload = function() {
         const lines = objText.split('\n');
         let hasNormals = false;
 
-        // Parse each line of the OBJ file
         lines.forEach(line => {
             const parts = line.trim().split(/\s+/);
             if (parts[0] === 'v') {
@@ -146,7 +146,6 @@ window.onload = function() {
             }
         });
 
-        // Compute normals if not provided
         if (!hasNormals) {
             const faceNormals = Array(finalPositions.length / 3).fill(null).map(() => [0, 0, 0]);
 
@@ -199,23 +198,27 @@ window.onload = function() {
             }
         }
 
-        return { positions: finalPositions, normals: finalNormals, indices };
+        return {
+            positions: finalPositions,
+            normals: finalNormals,
+            indices
+        };
     }
 
-    // Load the OBJ file from a URL
     function loadOBJ(url, callback) {
-        fetch(url)
-            .then(response => response.text())
-            .then(objText => {
-                const { positions, normals, indices } = parseOBJ
-
-(objText);
-                callback(positions, normals, indices);
-            })
-            .catch(error => console.error('Error loading OBJ file:', error));
+        const request = new XMLHttpRequest();
+        request.open('GET', url, true);
+        request.onload = function() {
+            if (request.status < 200 || request.status >= 300) {
+                console.error(`Failed to load OBJ file: ${url}`);
+                return;
+            }
+            const objData = parseOBJ(request.responseText);
+            callback(objData.positions, objData.normals, objData.indices);
+        };
+        request.send();
     }
 
-    // Initialize buffers for WebGL
     function initBuffers(gl, positions, normals, indices) {
         const positionBuffer = gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
@@ -237,7 +240,6 @@ window.onload = function() {
         };
     }
 
-    // Initialize buffers for the ground plane
     function initGroundPlaneBuffers(gl) {
         const positions = [
             -10.0, -1.0, 10.0,
@@ -261,7 +263,6 @@ window.onload = function() {
         return initBuffers(gl, positions, normals, indices);
     }
 
-    // Draw the scene
     function drawScene(gl, programInfo, buffers, modelViewMatrix) {
         const projectionMatrix = mat4.create();
         const fov = 45 * Math.PI / 180;
@@ -270,7 +271,6 @@ window.onload = function() {
         const zFar = 100.0;
         mat4.perspective(projectionMatrix, fov, aspect, zNear, zFar);
 
-        // Bind position buffer
         gl.bindBuffer(gl.ARRAY_BUFFER, buffers.position);
         gl.vertexAttribPointer(
             programInfo.attribLocations.vertexPosition,
@@ -282,7 +282,6 @@ window.onload = function() {
         );
         gl.enableVertexAttribArray(programInfo.attribLocations.vertexPosition);
 
-        // Bind normal buffer
         gl.bindBuffer(gl.ARRAY_BUFFER, buffers.normal);
         gl.vertexAttribPointer(
             programInfo.attribLocations.vertexNormal,
@@ -307,12 +306,66 @@ window.onload = function() {
             modelViewMatrix
         );
 
-        // Bind index buffer and draw elements
         gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buffers.indices);
         gl.drawElements(gl.TRIANGLES, buffers.numVertices, gl.UNSIGNED_SHORT, 0);
     }
 
-    // Start the animation and handle user interactions
+    function initNormalLineBuffers(gl, positions, normals) {
+        const lines = [];
+        for (let i = 0; i < positions.length; i += 3) {
+            lines.push(positions[i], positions[i + 1], positions[i + 2]);
+            lines.push(
+                positions[i] + normals[i] * 0.1,
+                positions[i + 1] + normals[i + 1] * 0.1,
+                positions[i + 2] + normals[i + 2] * 0.1
+            );
+        }
+
+        const lineBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, lineBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(lines), gl.STATIC_DRAW);
+
+        return {
+            line: lineBuffer,
+            numLines: lines.length / 3
+        };
+    }
+
+    function drawNormalLines(gl, normalProgramInfo, lineBuffers, modelViewMatrix) {
+        const projectionMatrix = mat4.create();
+        const fov = 45 * Math.PI / 180;
+        const aspect = gl.canvas.clientWidth / gl.canvas.clientHeight;
+        const zNear = 0.1;
+        const zFar = 100.0;
+        mat4.perspective(projectionMatrix, fov, aspect, zNear, zFar);
+
+        gl.bindBuffer(gl.ARRAY_BUFFER, lineBuffers.line);
+        gl.vertexAttribPointer(
+            normalProgramInfo.attribLocations.linePosition,
+            3,
+            gl.FLOAT,
+            false,
+            0,
+            0
+        );
+        gl.enableVertexAttribArray(normalProgramInfo.attribLocations.linePosition);
+
+        gl.useProgram(normalProgramInfo.program);
+
+        gl.uniformMatrix4fv(
+            normalProgramInfo.uniformLocations.projectionMatrix,
+            false,
+            projectionMatrix
+        );
+        gl.uniformMatrix4fv(
+            normalProgramInfo.uniformLocations.modelViewMatrix,
+            false,
+            modelViewMatrix
+        );
+
+        gl.drawArrays(gl.LINES, 0, lineBuffers.numLines);
+    }
+
     function start() {
         let isDragging = false;
         let isZooming = false;
@@ -332,7 +385,18 @@ window.onload = function() {
             },
         };
 
-        // Generate file paths for the OBJ files
+        const normalShaderProgram = initShaderProgram(gl, normalLineVsSource, normalLineFsSource);
+        const normalProgramInfo = {
+            program: normalShaderProgram,
+            attribLocations: {
+                linePosition: gl.getAttribLocation(normalShaderProgram, 'aLinePosition'),
+            },
+            uniformLocations: {
+                projectionMatrix: gl.getUniformLocation(normalShaderProgram, 'uProjectionMatrix'),
+                modelViewMatrix: gl.getUniformLocation(normalShaderProgram, 'uModelViewMatrix'),
+            },
+        };
+
         function generateOBJFilePaths() {
             const objFiles = [];
             const basePath = 'webgl-assets/meshes/';
@@ -348,15 +412,14 @@ window.onload = function() {
 
         const objFiles = generateOBJFilePaths();
 
-        // Initialize ground plane buffers
         const groundPlaneBuffers = initGroundPlaneBuffers(gl);
 
         let currentObjIndex = 0;
         let rotation = 0;
         let zoom = -10;
         let buffers;
+        let normalLineBuffers;
 
-        // Load the next OBJ file in the sequence
         function loadNextOBJ() {
             if (currentObjIndex >= objFiles.length) {
                 currentObjIndex = 0;
@@ -364,16 +427,16 @@ window.onload = function() {
 
             loadOBJ(objFiles[currentObjIndex], function(positions, normals, indices) {
                 buffers = initBuffers(gl, positions, normals, indices);
+                normalLineBuffers = initNormalLineBuffers(gl, positions, normals);
                 currentObjIndex++;
                 setTimeout(loadNextOBJ, 100);
             });
         }
 
-        // Render the scene
         function render() {
             gl.enable(gl.DEPTH_TEST);
             gl.depthFunc(gl.LEQUAL);
-            
+
             gl.clearColor(0.0, 0.0, 0.0, 1.0);
             gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
@@ -387,12 +450,12 @@ window.onload = function() {
             drawScene(gl, programInfo, groundPlaneBuffers, groundModelViewMatrix);
             if (buffers) {
                 drawScene(gl, programInfo, buffers, modelViewMatrix);
+                drawNormalLines(gl, normalProgramInfo, normalLineBuffers, modelViewMatrix);
             }
 
             requestAnimationFrame(render);
         }
 
-        // Event listener for mouse down
         canvas.addEventListener('mousedown', (event) => {
             if (event.shiftKey) {
                 isZooming = true;
@@ -403,13 +466,11 @@ window.onload = function() {
             lastMouseY = event.clientY;
         });
 
-        // Event listener for mouse up
         canvas.addEventListener('mouseup', () => {
             isDragging = false;
             isZooming = false;
         });
 
-        // Event listener for mouse move
         canvas.addEventListener('mousemove', (event) => {
             if (isDragging) {
                 const deltaX = event.clientX - lastMouseX;
@@ -422,10 +483,9 @@ window.onload = function() {
             }
         });
 
-        // Start loading OBJ files and render the scene
         loadNextOBJ();
         render();
     }
 
     start();
-};
+}

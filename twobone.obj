@@ -1,0 +1,40 @@
+# Simple 2 Bone OBJ Example
+
+# Vertices (Positions)
+v 0.0 0.0 0.0  # Bone 1 Start (Root)
+v 1.0 0.0 0.0  # Bone 1 End / Bone 2 Start
+v 2.0 0.0 0.0  # Bone 2 End
+
+# Joint/Bone Weights
+# Assuming the first vertex (v 0.0 0.0 0.0) is fully influenced by bone 1,
+# the second vertex (v 1.0 0.0 0.0) is influenced by both bones,
+# and the third vertex (v 2.0 0.0 0.0) is fully influenced by bone 2.
+
+# This section is optional and used in cases where you want to specify
+# how vertices are influenced by bones.
+# Each line corresponds to a vertex (starting from 1) and specifies
+# the bone index and the weight (influence) of that bone.
+
+# Bone influences: vertex index, bone index, weight
+vw 1 1 1.0  # Vertex 1 fully influenced by bone 1
+vw 2 1 0.5  # Vertex 2 influenced 50% by bone 1
+vw 2 2 0.5  # Vertex 2 influenced 50% by bone 2
+vw 3 2 1.0  # Vertex 3 fully influenced by bone 2
+
+# Faces (Polygons)
+# Defining a simple line connecting the vertices
+l 1 2  # Line from Bone 1 Start to Bone 1 End
+l 2 3  # Line from Bone 1 End to Bone 2 End
+
+# Bone Definitions (for a simple hierarchy example)
+# Bones typically would be defined in a separate skeleton file or section,
+# but here we are just showing a basic structure.
+
+# Bone 1
+b 1 0.0 0.0 0.0  # Bone 1 root position
+# Bone 2
+b 2 1.0 0.0 0.0  # Bone 2 root position (same as Bone 1 end)
+
+# The comments here indicate how bones would be conceptually added.
+# However, OBJ format doesn't directly support bones,
+# and they are usually part of a rigging system in formats like FBX or COLLADA.
